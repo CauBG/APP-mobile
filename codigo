@@ -5,6 +5,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator, DrawerContentScrollView, DrawerItem } from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+
 
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -12,6 +15,20 @@ const Drawer = createDrawerNavigator();
 // personalizacao dos drawers
 function CustomDrawerContent(props) {
   const { state, navigation } = props;
+  const [profileImage, setProfileImage] = useState(null);
+  const [usuario, setUsuario] = useState('');
+
+  useEffect(() => {
+    const carregarDados = async () => {
+      const savedImage = await AsyncStorage.getItem('profileImage');
+      const savedUser = await AsyncStorage.getItem('usuario');
+      if (savedImage) setProfileImage(savedImage);
+      if (savedUser) setUsuario(savedUser);
+    };
+    const unsubscribe = navigation.addListener('focus', carregarDados);
+    carregarDados();
+    return unsubscribe;
+  }, [navigation]);
 
   const itensDrawer = [
     { name: 'Home', label: 'Home', icon: 'home-outline' },
@@ -24,18 +41,26 @@ function CustomDrawerContent(props) {
       {...props} 
       contentContainerStyle={{ flex: 1, backgroundColor: '#EDEDED' }}
     >
+      {/* Top bar "Menu" */}
       <View style={styles.drawerTopBar}>
         <Text style={styles.drawerTopBarText}>Menu</Text>
       </View>
 
-      <View style={{ padding: 20, marginBottom: 10 }}>
-        <Image 
-          source={{ uri: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Android_O_Preview_Logo.png' }} 
-          style={{ width: 80, height: 80, marginBottom: 10 }} 
-        />
-        <Text style={{ color: '#333', fontSize: 22, fontWeight: 'bold' }}></Text>
+      {/* Avatar + Nome do usuário */}
+      <View style={styles.profileSection}>
+        <View style={styles.profileRow}>
+          {profileImage ? (
+            <Image source={{ uri: profileImage }} style={styles.drawerAvatar} />
+          ) : (
+            <Ionicons name="person-circle" size={64} color="#333" />
+          )}
+          <Text style={styles.drawerUserName}>
+            {usuario || 'Usuário'}
+          </Text>
+        </View>
       </View>
 
+      {/* Itens do Drawer */}
       {itensDrawer.map((item, index) => {
         const isActive = state.index === index;
         return (
@@ -65,6 +90,46 @@ function CustomDrawerContent(props) {
 
 // telas
 function HomeScreen({ navigation }) {
+  const [profileImage, setProfileImage] = useState(null);
+
+  useEffect(() => {
+  const loadImage = async () => {
+    const savedImage = await AsyncStorage.getItem('profileImage');
+    if (savedImage) setProfileImage(savedImage);
+  };
+  loadImage();
+}, []);
+
+
+  const escolherImagem = async () => {
+  const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permissionResult.granted) {
+    alert('Permissão para acessar a galeria é necessária!');
+    return;
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 1,
+  });
+
+  if (!result.canceled) {
+    const selectedImage = result.assets[0].uri;
+    try {
+      // cria uma cópia persistente da imagem
+      const newPath = `${FileSystem.documentDirectory}profile.jpg`;
+      await FileSystem.copyAsync({ from: selectedImage, to: newPath });
+
+      await AsyncStorage.setItem('profileImage', newPath);
+      setProfileImage(newPath);
+    } catch (error) {
+      console.log('Erro ao salvar imagem:', error);
+    }
+  }
+};
+
   return (
     <View style={styles.homeContainer}>
       <View style={styles.topBar}>
@@ -74,12 +139,40 @@ function HomeScreen({ navigation }) {
         >
           <Ionicons name="menu" size={28} color="#fff" />
         </TouchableOpacity>
+
         <Text style={styles.topBarTitle}>Home</Text>
+
+       <TouchableOpacity 
+  onPress={escolherImagem} 
+  style={{
+    width: 45,
+    height: 45,
+    borderRadius: 25,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginLeft: 'auto', // mantém ele no canto direito
+  }}
+>
+  {profileImage && profileImage !== '' ? (
+    <Image
+      source={{ uri: profileImage }}
+      style={{
+        width: '100%',
+        height: '100%',
+        borderRadius: 25,
+      }}
+      onError={() => console.log('Falha ao carregar imagem')}
+    />
+  ) : (
+    <Ionicons name="camera-outline" size={26} color="#000" />
+  )}
+</TouchableOpacity>
       </View>
+
       <View style={styles.content}>
-        <Text style={styles.contentText}>
-          Em breve
-        </Text>
+        <Text style={styles.contentText}>Em breve</Text>
       </View>
     </View>
   );
@@ -330,7 +423,7 @@ function RegisterScreen({ navigation }) {
 
       <TouchableOpacity onPress={() => navigation.navigate('Login')}>
         <Text style={[styles.registerText, { marginTop: 10 }]}>
-          Já tem conta? Login
+          Ja tem conta? Login
         </Text>
       </TouchableOpacity>
     </View>
@@ -432,13 +525,13 @@ const styles = StyleSheet.create({
   homeContainer: { flex:1, backgroundColor:'#EDEDED' },
 
   topBar: {
-    height: 60,
-    backgroundColor: '#333',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingTop: 15
-  },
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between', // 👈 adiciona isso
+  backgroundColor: '#333',
+  paddingHorizontal: 15,
+  paddingVertical: 10,
+},
 
   menuButton: {
     marginRight: 10
@@ -476,4 +569,38 @@ const styles = StyleSheet.create({
     fontSize:16,
     textAlign:'center',
   },
+  avatarButton: {
+  marginLeft: 'auto',
+  borderRadius: 50,
+  overflow: 'hidden',
+},
+
+avatarImage: {
+  width: 38,
+  height: 38,
+  borderRadius: 19,
+},
+profileSection: {
+  paddingHorizontal: 20,
+  marginBottom: 10,
+},
+
+profileRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 10,
+},
+
+drawerAvatar: {
+  width: 60,
+  height: 60,
+  borderRadius: 30,
+},
+
+drawerUserName: {
+  fontSize: 18,
+  color: '#333',
+  fontWeight: 'bold',
+},
+
 });
