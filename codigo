@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, createContext, useContext } from 'react';
 import { View, Text, Image, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -8,15 +8,23 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 
-
+// -----------------------------
+// CONFIGURAÇÃO BÁSICA DE NAVEGAÇÃO
+// -----------------------------
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
-// personalizacao dos drawers
+// -----------------------------
+// CONTEXTO GLOBAL DE USUÁRIO
+// -----------------------------
+const UserContext = createContext();
+
+// -----------------------------
+// DRAWER PERSONALIZADO
+// -----------------------------
 function CustomDrawerContent(props) {
   const { state, navigation } = props;
-  const [profileImage, setProfileImage] = useState(null);
-  const [usuario, setUsuario] = useState('');
+  const { profileImage, usuario, setProfileImage, setUsuario } = useContext(UserContext);
 
   useEffect(() => {
     const carregarDados = async () => {
@@ -25,10 +33,8 @@ function CustomDrawerContent(props) {
       if (savedImage) setProfileImage(savedImage);
       if (savedUser) setUsuario(savedUser);
     };
-    const unsubscribe = navigation.addListener('focus', carregarDados);
     carregarDados();
-    return unsubscribe;
-  }, [navigation]);
+  }, []);
 
   const itensDrawer = [
     { name: 'Home', label: 'Home', icon: 'home-outline' },
@@ -37,16 +43,11 @@ function CustomDrawerContent(props) {
   ];
 
   return (
-    <DrawerContentScrollView 
-      {...props} 
-      contentContainerStyle={{ flex: 1, backgroundColor: '#EDEDED' }}
-    >
-      {/* Top bar "Menu" */}
+    <DrawerContentScrollView {...props} contentContainerStyle={{ flex: 1, backgroundColor: '#EDEDED' }}>
       <View style={styles.drawerTopBar}>
         <Text style={styles.drawerTopBarText}>Menu</Text>
       </View>
 
-      {/* Avatar + Nome do usuário */}
       <View style={styles.profileSection}>
         <View style={styles.profileRow}>
           {profileImage ? (
@@ -54,13 +55,10 @@ function CustomDrawerContent(props) {
           ) : (
             <Ionicons name="person-circle" size={64} color="#333" />
           )}
-          <Text style={styles.drawerUserName}>
-            {usuario || 'Usuário'}
-          </Text>
+          <Text style={styles.drawerUserName}>{usuario || 'Usuário'}</Text>
         </View>
       </View>
 
-      {/* Itens do Drawer */}
       {itensDrawer.map((item, index) => {
         const isActive = state.index === index;
         return (
@@ -88,87 +86,76 @@ function CustomDrawerContent(props) {
   );
 }
 
-// telas
+// -----------------------------
+// HOME
+// -----------------------------
 function HomeScreen({ navigation }) {
-  const [profileImage, setProfileImage] = useState(null);
-
-  useEffect(() => {
-  const loadImage = async () => {
-    const savedImage = await AsyncStorage.getItem('profileImage');
-    if (savedImage) setProfileImage(savedImage);
-  };
-  loadImage();
-}, []);
-
+  const { profileImage, setProfileImage } = useContext(UserContext);
 
   const escolherImagem = async () => {
-  const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permissionResult.granted) {
-    alert('Permissão para acessar a galeria é necessária!');
-    return;
-  }
-
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    allowsEditing: true,
-    aspect: [1, 1],
-    quality: 1,
-  });
-
-  if (!result.canceled) {
-    const selectedImage = result.assets[0].uri;
-    try {
-      // cria uma cópia persistente da imagem
-      const newPath = `${FileSystem.documentDirectory}profile.jpg`;
-      await FileSystem.copyAsync({ from: selectedImage, to: newPath });
-
-      await AsyncStorage.setItem('profileImage', newPath);
-      setProfileImage(newPath);
-    } catch (error) {
-      console.log('Erro ao salvar imagem:', error);
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      alert('Permissão para acessar a galeria é necessária!');
+      return;
     }
-  }
-};
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      const selectedImage = result.assets[0].uri;
+      try {
+        const newPath = `${FileSystem.documentDirectory}profile.jpg`;
+        await FileSystem.copyAsync({ from: selectedImage, to: newPath });
+
+        await AsyncStorage.setItem('profileImage', newPath);
+        setProfileImage(newPath); // 🔥 Atualiza instantaneamente via contexto
+      } catch (error) {
+        console.log('Erro ao salvar imagem:', error);
+      }
+    }
+  };
 
   return (
     <View style={styles.homeContainer}>
       <View style={styles.topBar}>
-        <TouchableOpacity 
-          onPress={() => navigation.openDrawer()} 
-          style={styles.menuButton}
-        >
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
           <Ionicons name="menu" size={28} color="#fff" />
         </TouchableOpacity>
 
         <Text style={styles.topBarTitle}>Home</Text>
 
-       <TouchableOpacity 
-  onPress={escolherImagem} 
-  style={{
-    width: 45,
-    height: 45,
-    borderRadius: 25,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-    marginLeft: 'auto', // mantém ele no canto direito
-  }}
->
-  {profileImage && profileImage !== '' ? (
-    <Image
-      source={{ uri: profileImage }}
-      style={{
-        width: '100%',
-        height: '100%',
-        borderRadius: 25,
-      }}
-      onError={() => console.log('Falha ao carregar imagem')}
-    />
-  ) : (
-    <Ionicons name="camera-outline" size={26} color="#000" />
-  )}
-</TouchableOpacity>
+        <TouchableOpacity
+          onPress={escolherImagem}
+          style={{
+            width: 45,
+            height: 45,
+            borderRadius: 25,
+            backgroundColor: '#f0f0f0',
+            justifyContent: 'center',
+            alignItems: 'center',
+            overflow: 'hidden',
+            marginLeft: 'auto',
+          }}
+        >
+          {profileImage && profileImage !== '' ? (
+            <Image
+              source={{ uri: profileImage }}
+              style={{
+                width: '100%',
+                height: '100%',
+                borderRadius: 25,
+              }}
+              onError={() => console.log('Falha ao carregar imagem')}
+            />
+          ) : (
+            <Ionicons name="camera-outline" size={26} color="#000" />
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.content}>
@@ -178,14 +165,14 @@ function HomeScreen({ navigation }) {
   );
 }
 
+// -----------------------------
+// OUTRAS TELAS
+// -----------------------------
 function SecondScreen({ navigation }) {
   return (
     <View style={styles.homeContainer}>
       <View style={styles.topBar}>
-        <TouchableOpacity 
-          onPress={() => navigation.openDrawer()} 
-          style={styles.menuButton}
-        >
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
           <Ionicons name="menu" size={28} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Consultas</Text>
@@ -201,28 +188,24 @@ function ThirdScreen({ navigation }) {
   return (
     <View style={styles.homeContainer}>
       <View style={styles.topBar}>
-        <TouchableOpacity 
-          onPress={() => navigation.openDrawer()} 
-          style={styles.menuButton}
-        >
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
           <Ionicons name="menu" size={28} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Mensagens</Text>
       </View>
       <View style={styles.content}>
-        <Text style={styles.contentText}> Em breve </Text>
+        <Text style={styles.contentText}>Em breve</Text>
       </View>
     </View>
   );
 }
 
-// drawer das telas
+// -----------------------------
+// DRAWER PRINCIPAL
+// -----------------------------
 function AppDrawer() {
   return (
-    <Drawer.Navigator
-      screenOptions={{ headerShown: false }}
-      drawerContent={(props) => <CustomDrawerContent {...props} />}
-    >
+    <Drawer.Navigator screenOptions={{ headerShown: false }} drawerContent={(props) => <CustomDrawerContent {...props} />}>
       <Drawer.Screen name="Home" component={HomeScreen} />
       <Drawer.Screen name="SecondScreen" component={SecondScreen} />
       <Drawer.Screen name="ThirdScreen" component={ThirdScreen} />
@@ -230,7 +213,9 @@ function AppDrawer() {
   );
 }
 
-// tela inicial
+// -----------------------------
+// SPLASH
+// -----------------------------
 function SplashScreen({ navigation }) {
   useEffect(() => {
     const checkLogin = async () => {
@@ -248,18 +233,21 @@ function SplashScreen({ navigation }) {
 
   return (
     <View style={styles.splashContainer}>
-      <Image 
+      <Image
         source={{ uri: 'https://raw.githubusercontent.com/CauBG/APP-mobile/refs/heads/main/logo.png' }}
-        style={styles.logo} 
+        style={styles.logo}
       />
       <Text style={styles.nomeApp}></Text>
     </View>
   );
 }
 
-// tela de login
+// -----------------------------
+// LOGIN
+// -----------------------------
 function LoginScreen({ navigation }) {
-  const [usuario, setUsuario] = useState('');
+  const { setUsuario } = useContext(UserContext);
+  const [usuario, setUsuarioLocal] = useState('');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
 
@@ -267,14 +255,13 @@ function LoginScreen({ navigation }) {
     const contasSalvas = await AsyncStorage.getItem('contas');
     const contas = contasSalvas ? JSON.parse(contasSalvas) : [];
 
-    const usuarioValido = contas.find(
-      (conta) => conta.usuario === usuario && conta.senha === senha
-    );
+    const usuarioValido = contas.find((conta) => conta.usuario === usuario && conta.senha === senha);
 
     if (usuarioValido) {
       await AsyncStorage.setItem('logado', 'true');
       await AsyncStorage.setItem('usuario', usuario);
       await AsyncStorage.setItem('senha', senha);
+      setUsuario(usuario);
       navigation.replace('AppDrawer');
     } else {
       alert('Usuário ou senha inválidos');
@@ -291,12 +278,7 @@ function LoginScreen({ navigation }) {
       />
 
       <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Usuário"
-          value={usuario}
-          onChangeText={setUsuario}
-        />
+        <TextInput style={styles.input} placeholder="Usuário" value={usuario} onChangeText={setUsuarioLocal} />
       </View>
 
       <View style={styles.inputContainer}>
@@ -309,17 +291,13 @@ function LoginScreen({ navigation }) {
             secureTextEntry={!mostrarSenha}
           />
           <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)}>
-            <Ionicons
-              name={mostrarSenha ? "eye-off" : "eye"}
-              size={24}
-              color="#999"
-            />
+            <Ionicons name={mostrarSenha ? 'eye-off' : 'eye'} size={24} color="#999" />
           </TouchableOpacity>
         </View>
       </View>
 
       <TouchableOpacity
-        style={[styles.button,, { opacity: podeEntrar ? 1 : 0.5 }]}
+        style={[styles.button, { opacity: podeEntrar ? 1 : 0.5 }]}
         onPress={fazerLogin}
         disabled={!podeEntrar}
       >
@@ -333,17 +311,16 @@ function LoginScreen({ navigation }) {
   );
 }
 
-// Tela de Registro
+// -----------------------------
+// REGISTRO
+// -----------------------------
 function RegisterScreen({ navigation }) {
   const [usuario, setUsuario] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
 
-  const validarEmail = (email) => {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(email);
-  };
+  const validarEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const registrar = async () => {
     if (!validarEmail(email)) {
@@ -373,14 +350,8 @@ function RegisterScreen({ navigation }) {
   return (
     <View style={styles.mainContainer}>
       <Text style={styles.loginTitle}>Criar Conta</Text>
-
       <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Usuário"
-          value={usuario}
-          onChangeText={setUsuario}
-        />
+        <TextInput style={styles.input} placeholder="Usuário" value={usuario} onChangeText={setUsuario} />
       </View>
 
       <View style={styles.inputContainer}>
@@ -404,11 +375,7 @@ function RegisterScreen({ navigation }) {
             secureTextEntry={!mostrarSenha}
           />
           <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)}>
-            <Ionicons
-              name={mostrarSenha ? "eye-off" : "eye"}
-              size={24}
-              color="#999"
-            />
+            <Ionicons name={mostrarSenha ? 'eye-off' : 'eye'} size={24} color="#999" />
           </TouchableOpacity>
         </View>
       </View>
@@ -422,185 +389,112 @@ function RegisterScreen({ navigation }) {
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-        <Text style={[styles.registerText, { marginTop: 10 }]}>
-          Ja tem conta? Login
-        </Text>
+        <Text style={[styles.registerText, { marginTop: 10 }]}>Já tem conta? Login</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-// app
+// -----------------------------
+// APP FINAL
+// -----------------------------
 export default function App() {
+  const [profileImage, setProfileImage] = useState(null);
+  const [usuario, setUsuario] = useState('');
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Splash" component={SplashScreen} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Register" component={RegisterScreen} />
-        <Stack.Screen name="AppDrawer" component={AppDrawer} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <UserContext.Provider value={{ profileImage, setProfileImage, usuario, setUsuario }}>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Splash" component={SplashScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="AppDrawer" component={AppDrawer} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </UserContext.Provider>
   );
 }
 
-//estilos
+// -----------------------------
+// ESTILOS
+// -----------------------------
 const styles = StyleSheet.create({
   splashContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#3c3c3c' },
-  logo: { width:150, height:150, marginBottom:20 },
-  nomeApp: { fontSize:28, color:'#fff', fontWeight:'bold' },
+  logo: { width: 150, height: 150, marginBottom: 20 },
+  nomeApp: { fontSize: 28, color: '#fff', fontWeight: 'bold' },
 
-  mainContainer: { flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'#3c3c3c', padding:20 },
-  logo1:{ width:150, height:150, marginBottom:85 },
+  mainContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#3c3c3c', padding: 20 },
+  logo1: { width: 150, height: 150, marginBottom: 85 },
 
-
-  loginTitle: {
-    fontSize:32,
-    marginBottom:40,
-    fontWeight:'bold',
-    color:'#fff'
-  },
+  loginTitle: { fontSize: 32, marginBottom: 40, fontWeight: 'bold', color: '#fff' },
 
   inputContainer: {
-    width:'100%',
-    marginBottom:20,
-    shadowColor:'#000',
-    shadowOffset:{ width:0, height:2 },
-    shadowOpacity:0.25,
-    shadowRadius:3.84,
-    elevation:5,
-    borderRadius:10,
-    backgroundColor:'#fff'
+    width: '100%',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    borderRadius: 10,
+    backgroundColor: '#fff',
   },
 
-  input: {
-    width:'100%',
-    height:50,
-    paddingHorizontal:15,
-    borderRadius:10,
-    fontSize:16
-  },
+  input: { width: '100%', height: 50, paddingHorizontal: 15, borderRadius: 10, fontSize: 16 },
 
-  senhaContainer: {
-    flexDirection:'row',
-    alignItems:'center',
-    paddingHorizontal:15,
-    height:50,
-    borderRadius:10,
-  },
+  senhaContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, height: 50, borderRadius: 10 },
 
-  inputSenha: {
-    flex:1,
-    fontSize:16
-  },
+  inputSenha: { flex: 1, fontSize: 16 },
 
   button: {
-    width:'100%',
-    height:50,
-    backgroundColor:'#8c8c8c',
-    borderRadius:10,
-    justifyContent:'center',
-    alignItems:'center',
-    shadowColor:'#000',
-    shadowOffset:{ width:0, height:3 },
-    shadowOpacity:0.27,
-    shadowRadius:4.65,
-    elevation:6,
-    marginTop:10
+    width: '100%',
+    height: 50,
+    backgroundColor: '#8c8c8c',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.27,
+    shadowRadius: 4.65,
+    elevation: 6,
+    marginTop: 10,
   },
 
-  buttonText: {
-    color:'#fff',
-    fontSize:18,
-    fontWeight:'bold'
-  },
+  buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  registerText: { marginTop: 15, color: '#fff', fontSize: 16, fontWeight: 'bold' },
 
-  registerText: {
-    marginTop:15,
-    color:'#fff',
-    fontSize:16,
-    fontWeight:'bold'
-  },
-
-  homeContainer: { flex:1, backgroundColor:'#EDEDED' },
+  homeContainer: { flex: 1, backgroundColor: '#EDEDED' },
 
   topBar: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between', // 👈 adiciona isso
-  backgroundColor: '#333',
-  paddingHorizontal: 15,
-  paddingVertical: 10,
-},
-
-  menuButton: {
-    marginRight: 10
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#333',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
   },
 
-  topBarTitle: {
-    color:'#fff',
-    fontSize:20,
-    fontWeight:'bold'
-  },
+  menuButton: { marginRight: 10 },
+
+  topBarTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
 
   drawerTopBar: {
     height: 60,
     backgroundColor: '#333',
     justifyContent: 'center',
     paddingLeft: 15,
-    marginBottom: 10
+    marginBottom: 10,
   },
 
-  drawerTopBarText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold'
-  },
+  drawerTopBarText: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
 
-  content: { 
-    flex:1, 
-    padding:20, 
-    justifyContent:'center', 
-    alignItems:'center' 
-  },
+  content: { flex: 1, padding: 20, justifyContent: 'center', alignItems: 'center' },
+  contentText: { color: '#333', fontSize: 16, textAlign: 'center' },
 
-  contentText: {
-    color:'#333',
-    fontSize:16,
-    textAlign:'center',
-  },
-  avatarButton: {
-  marginLeft: 'auto',
-  borderRadius: 50,
-  overflow: 'hidden',
-},
-
-avatarImage: {
-  width: 38,
-  height: 38,
-  borderRadius: 19,
-},
-profileSection: {
-  paddingHorizontal: 20,
-  marginBottom: 10,
-},
-
-profileRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 10,
-},
-
-drawerAvatar: {
-  width: 60,
-  height: 60,
-  borderRadius: 30,
-},
-
-drawerUserName: {
-  fontSize: 18,
-  color: '#333',
-  fontWeight: 'bold',
-},
-
+  profileSection: { paddingHorizontal: 20, marginBottom: 10 },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  drawerAvatar: { width: 60, height: 60, borderRadius: 30 },
+  drawerUserName: { fontSize: 18, color: '#333', fontWeight: 'bold' },
 });
