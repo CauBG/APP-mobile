@@ -16,6 +16,7 @@ import * as MailComposer from 'expo-mail-composer';
 import { Linking } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Animated } from 'react-native';
+import * as Crypto from 'expo-crypto';
 
 
 const Stack = createNativeStackNavigator();
@@ -917,19 +918,29 @@ function LoginScreen({ navigation }) {
 
   const fazerLogin = async () => {
     const contasSalvas = await AsyncStorage.getItem('contas');
-    const contas = contasSalvas ? JSON.parse(contasSalvas) : [];
+const contas = contasSalvas ? JSON.parse(contasSalvas) : [];
 
-    const usuarioValido = contas.find((conta) => conta.usuario === usuario && conta.senha === senha);
+// hash gerado
+const senhaHash = await Crypto.digestStringAsync(
+  Crypto.CryptoDigestAlgorithm.SHA256,
+  senha
+);
 
-    if (usuarioValido) {
-      await AsyncStorage.setItem('logado', 'true');
-      await AsyncStorage.setItem('usuario', usuario);
-      await AsyncStorage.setItem('senha', senha);
-      setUsuario(usuario);
-      navigation.replace('AppDrawer');
-    } else {
-      alert('Usuário ou senha inválidos');
-    }
+// verifica o has do usuário
+const usuarioValido = contas.find(
+  (conta) => conta.usuario === usuario && conta.senha === senhaHash
+);
+
+if (usuarioValido) {
+  await AsyncStorage.setItem('logado', 'true');
+  await AsyncStorage.setItem('usuario', usuario);
+  await AsyncStorage.setItem('senha', senhaHash);
+  setUsuario(usuario);
+  navigation.replace('AppDrawer');
+} else {
+  alert('Usuário ou senha inválidos');
+}
+
   };
 
   const podeEntrar = usuario.trim() !== '' && senha.trim() !== '';
@@ -1000,12 +1011,19 @@ function RegisterScreen({ navigation }) {
       return;
     }
 
-    const novaConta = { usuario, email, senha };
-    contas.push(novaConta);
+    // parte de criptografia para a senha
+const senhaHash = await Crypto.digestStringAsync(
+  Crypto.CryptoDigestAlgorithm.SHA256,
+  senha
+);
 
-    await AsyncStorage.setItem('contas', JSON.stringify(contas));
-    alert('Conta criada com sucesso!');
-    navigation.goBack();
+const novaConta = { usuario, email, senha: senhaHash };
+contas.push(novaConta);
+
+await AsyncStorage.setItem('contas', JSON.stringify(contas));
+alert('Conta criada com sucesso!');
+navigation.goBack();
+
   };
 
   const podeRegistrar = usuario.trim() !== '' && validarEmail(email) && senha.trim() !== '';
