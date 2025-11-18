@@ -1,0 +1,1340 @@
+import React, { useEffect, useState, useCallback, createContext, useContext } from 'react';
+import { 
+  View, Text, Image, StyleSheet, TextInput, TouchableOpacity, Modal,
+  KeyboardAvoidingView, Platform, ScrollView, FlatList
+} from 'react-native';
+
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createDrawerNavigator, DrawerContentScrollView, DrawerItem } from '@react-navigation/drawer';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as DocumentPicker from 'expo-document-picker';
+import { Animated } from 'react-native';
+import * as Crypto from 'expo-crypto';
+
+
+const Stack = createNativeStackNavigator();
+const Drawer = createDrawerNavigator();
+
+
+const UserContext = createContext();
+
+
+function CustomDrawerContent(props) {
+  const { state, navigation } = props;
+  const { profileImage, usuario, setProfileImage, setUsuario } = useContext(UserContext);
+
+  useEffect(() => {
+    const carregarDados = async () => {
+      const savedImage = await AsyncStorage.getItem('profileImage');
+      const savedUser = await AsyncStorage.getItem('usuario');
+      if (savedImage) setProfileImage(savedImage);
+      if (savedUser) setUsuario(savedUser);
+    };
+    carregarDados();
+  }, []);
+
+  const itensDrawer = [
+    { name: 'Home', label: 'Home', icon: 'home-outline' },
+    { name: 'SecondScreen', label: 'Consultas', icon: 'search-outline' },
+    { name: 'ThirdScreen', label: 'Mensagens', icon: 'mail-outline' },
+  ];
+
+  return (
+    <DrawerContentScrollView {...props} contentContainerStyle={{ flex: 1, backgroundColor: '#EDEDED' }}>
+      <View style={styles.drawerTopBar}>
+        <Text style={styles.drawerTopBarText}>Menu</Text>
+      </View>
+
+      <View style={styles.profileSection}>
+        <View style={styles.profileRow}>
+          {profileImage ? (
+            <Image source={{ uri: profileImage }} style={styles.drawerAvatar} />
+          ) : (
+            <Ionicons name="person-circle" size={64} color="#333" />
+          )}
+          <Text style={styles.drawerUserName}>{usuario || 'Usuário'}</Text>
+        </View>
+      </View>
+
+      {itensDrawer.map((item, index) => {
+        const isActive = state.index === index;
+        return (
+          <DrawerItem
+            key={item.name}
+            label={item.label}
+            labelStyle={{ color: isActive ? '#1E90FF' : '#333', fontWeight: isActive ? 'bold' : 'normal' }}
+            onPress={() => navigation.navigate(item.name)}
+            style={{ backgroundColor: isActive ? '#D6EBFF' : 'transparent', borderRadius: 10, marginHorizontal: 5 }}
+            icon={() => <Ionicons name={item.icon} size={22} color={isActive ? '#1E90FF' : '#333'} />}
+          />
+        );
+      })}
+
+      <DrawerItem
+        label="Sair"
+        labelStyle={{ color: '#333' }}
+        onPress={async () => {
+          await AsyncStorage.removeItem('logado');
+          navigation.replace('Login');
+        }}
+        icon={() => <Ionicons name="log-out-outline" size={22} color="#333" />}
+      />
+    </DrawerContentScrollView>
+  );
+}
+
+
+function HomeScreen({ navigation }) {
+  const { profileImage, setProfileImage, usuario, setUsuario } = React.useContext(UserContext);
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const scaleAnim = React.useRef(new Animated.Value(0.96)).current;
+
+  React.useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 900,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 900,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, scaleAnim]);
+
+  useEffect(() => {
+    (async () => {
+      const savedImage = await AsyncStorage.getItem('profileImage');
+      if (savedImage && !profileImage) {
+        setProfileImage(savedImage);
+      }
+      if (!usuario) {
+        const savedUser = await AsyncStorage.getItem('usuario');
+        if (savedUser) setUsuario(savedUser);
+      }
+    })();
+  }, [profileImage, setProfileImage, usuario, setUsuario]);
+
+  const escolherImagem = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      alert('Permissão para acessar a galeria é necessária!');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      const selectedImage = result.assets[0].uri;
+      try {
+        const newPath = `${FileSystem.documentDirectory}profile.jpg`;
+        await FileSystem.copyAsync({ from: selectedImage, to: newPath });
+        await AsyncStorage.setItem('profileImage', newPath);
+        setProfileImage(newPath); // atualiza na hora
+      } catch (error) {
+        console.log('Erro ao salvar imagem:', error);
+      }
+    }
+  };
+
+  return (
+    <View style={styles.homeContainer}>
+     
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
+          <Ionicons name="menu" size={28} color="#fff" />
+        </TouchableOpacity>
+
+        <Text style={styles.topBarTitle}>Home</Text>
+
+      
+        <TouchableOpacity
+          onPress={escolherImagem}
+          style={{
+            width: 45,
+            height: 45,
+            borderRadius: 25,
+            backgroundColor: '#f0f0f0',
+            justifyContent: 'center',
+            alignItems: 'center',
+            overflow: 'hidden',
+            marginLeft: 'auto',
+          }}
+        >
+          {profileImage && profileImage !== '' ? (
+            <Image
+              source={{ uri: profileImage }}
+              style={{ width: '100%', height: '100%', borderRadius: 25 }}
+              onError={() => console.log('Falha ao carregar imagem')}
+            />
+          ) : (
+            <Ionicons name="camera-outline" size={26} color="#000" />
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.homeContent}>
+        {/* logo como marca d’água */}
+        <Image
+  source={{ uri: 'https://raw.githubusercontent.com/CauBG/APP-mobile/main/logo.png' }}
+  style={styles.fadeLogo}
+  resizeMode="contain"
+  onError={(e) => console.log('Erro ao carregar logo:', e.nativeEvent?.error)}
+/>
+      </View>
+    </View>
+  )
+}
+
+
+function SecondScreen({ navigation }) {
+  const STORAGE_KEY = 'consultas';
+  const [consultas, setConsultas] = useState([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editandoId, setEditandoId] = useState(null);
+
+  // colocar data
+const [dataSelecionada, setDataSelecionada] = useState(new Date());
+const [showDatePicker, setShowDatePicker] = useState(false);
+
+
+  // área de formulário
+  const [paciente, setPaciente] = useState('');
+  const [dataStr, setDataStr] = useState('');   
+  const [horaStr, setHoraStr] = useState('');  
+  const [endereco, setEndereco] = useState('');
+  const [telefone, setTelefone] = useState('');
+  const [veiculo, setVeiculo] = useState('carro'); // 'carro' | 'moto'
+const handleTelefone = (text) => {
+    const digits = text.replace(/\D/g, '');
+    let out = digits;
+
+    if (digits.length <= 2) {
+      out = digits;
+    } else if (digits.length <= 6) {
+      out = `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    } else if (digits.length <= 10) {
+      out = `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+    } else {
+      out = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+    }
+
+    setTelefone(out);
+  };
+
+  const handleData = (text) => {
+    const digits = text.replace(/\D/g, '').slice(0, 8);
+    let out = digits;
+    if (digits.length >= 3 && digits.length <= 4) {
+      out = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    } else if (digits.length >= 5) {
+      out = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    }
+    setDataStr(out);
+  };
+
+  const handleHora = (text) => {
+    const digits = text.replace(/\D/g, '').slice(0, 4);
+    let out = digits;
+    if (digits.length >= 3) {
+      out = `${digits.slice(0, 2)}:${digits.slice(2)}`;
+    }
+    setHoraStr(out);
+  };
+  // atualizador da lista
+  useEffect(() => {
+    const load = async () => {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      setConsultas(raw ? JSON.parse(raw) : []);
+    };
+    load();
+  }, []);
+
+  const persist = async (list) => {
+    // ordem de data e hora
+    const sorted = [...list].sort((a, b) => new Date(a.dataHora) - new Date(b.dataHora));
+    setConsultas(sorted);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+  };
+
+  const abrirModalCriar = () => {
+    setEditandoId(null);
+    setPaciente('');
+    setDataStr('');
+    setHoraStr('');
+    setEndereco('');
+    setTelefone('');
+    setVeiculo('carro');
+    setModalVisible(true);
+  };
+
+  const abrirModalEditar = (item) => {
+    setEditandoId(item.id);
+    setPaciente(item.paciente);
+    const d = new Date(item.dataHora);
+    setDataStr(formatDateToBR(d)); 
+    setHoraStr(formatTime(d));     
+    setEndereco(item.endereco);
+    setTelefone(item.telefone);
+    setVeiculo(item.veiculo || 'carro');
+    setModalVisible(true);
+  };
+
+  const fecharModal = () => {
+    setModalVisible(false);
+  };
+
+  const validar = () => {
+    if (!paciente.trim()) {
+      alert('Informe o nome do Cliente.');
+      return false;
+    }
+    if (!isValidDateBR(dataStr)) {
+      alert('Informe uma data válida no formato DD/MM/AAAA.');
+      return false;
+    }
+    if (!isValidTime(horaStr)) {
+      alert('Informe um horário válido no formato HH:MM.');
+      return false;
+    }
+    if (!endereco.trim()) {
+      alert('Informe o endereço.');
+      return false;
+    }
+    if (!telefone.trim()) {
+      alert('Informe o telefone.');
+      return false;
+    }
+    return true;
+  };
+
+  const salvar = async () => {
+    if (!validar()) return;
+
+    const iso = joinDateTimeToISO(dataStr, horaStr); 
+
+    if (editandoId) {
+      const list = consultas.map((c) =>
+        c.id === editandoId
+          ? { ...c, paciente, dataHora: iso, endereco, telefone, veiculo }
+          : c
+      );
+      await persist(list);
+    } else {
+      const novo = {
+        id: Date.now().toString(),
+        paciente,
+        dataHora: iso,
+        endereco,
+        telefone,
+        veiculo, 
+      };
+      await persist([novo, ...consultas]);
+    }
+    fecharModal();
+  };
+
+  const remover = async (id) => {
+    const list = consultas.filter((c) => c.id !== id);
+    await persist(list);
+  };
+
+  return (
+    <View style={styles.homeContainer}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
+          <Ionicons name="menu" size={28} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle}>Consultas</Text>
+        <View style={{ width: 28 }} />
+      </View>
+
+      <View style={{ flex: 1, padding: 16 }}>
+        {consultas.length === 0 ? (
+          <Text style={{ textAlign: 'center', color: '#555', marginTop: 12 }}>
+            Nenhuma consulta cadastrada.
+          </Text>
+        ) : (
+          consultas.map((item) => (
+            <View
+              key={item.id}
+              style={{
+                backgroundColor: '#E8F2FF',
+                borderRadius: 12,
+                padding: 12,
+                marginBottom: 12,
+                shadowColor: '#000',
+                shadowOpacity: 0.08,
+                shadowRadius: 4,
+                elevation: 2,
+              }}
+            >
+              <Text style={{ fontWeight: 'bold', fontSize: 16 }}>{item.paciente}</Text>
+              <Text style={{ marginTop: 4, color: '#333' }}>
+                {formatDateToBR(new Date(item.dataHora))} • {formatTime(new Date(item.dataHora))}
+              </Text>
+              <Text style={{ marginTop: 4, color: '#333' }}>{item.endereco}</Text>
+              <Text style={{ marginTop: 2, color: '#333' }}>Tel: {item.telefone}</Text>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                <View
+                  style={[
+                    styles.chip,
+                    item.veiculo === 'carro' ? styles.chipSelected : null,
+                  ]}
+                >
+                  <Text style={item.veiculo === 'carro' ? styles.chipTextSelected : styles.chipText}>
+                    Carro
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.chip,
+                    item.veiculo === 'moto' ? styles.chipSelected : null,
+                    { marginLeft: 8 },
+                  ]}
+                >
+                  <Text style={item.veiculo === 'moto' ? styles.chipTextSelected : styles.chipText}>
+                    Moto
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', marginTop: 10, gap: 16 }}>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center' }}
+                  onPress={() => abrirModalEditar(item)}
+                >
+                  <Ionicons name="create-outline" size={18} color="#333" />
+                  <Text style={{ marginLeft: 6 }}>Editar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center' }}
+                  onPress={() => remover(item.id)}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#b00020" />
+                  <Text style={{ marginLeft: 6, color: '#b00020' }}>Excluir</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+
+
+      <TouchableOpacity style={styles.fab} onPress={abrirModalCriar} activeOpacity={0.8}>
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
+
+     
+      <Modal visible={modalVisible} animationType="fade" transparent onRequestClose={fecharModal}>
+  <KeyboardAvoidingView
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    style={styles.modalBackdrop}
+    keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+  >
+    <ScrollView
+      contentContainerStyle={styles.modalScroll}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.modalCard}>
+        <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>
+          {editandoId ? 'Editar consulta' : 'Nova consulta'}
+        </Text>
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Nome do Cliente"
+            placeholderTextColor="#777"
+            value={paciente}
+            onChangeText={setPaciente}
+          />
+        </View>
+
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          
+          <TouchableOpacity
+            style={[styles.inputLike, { flex: 1 }]}
+            onPress={() => setShowDatePicker(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="calendar-outline" size={18} color="#555" style={{ marginRight: 6 }} />
+            <Text style={{ fontSize: 16, color: dataStr ? '#000' : '#777' }}>
+              {dataStr || 'Selecione a data'}
+            </Text>
+          </TouchableOpacity>
+
+       
+          <View style={[styles.inputContainer, { width: 120 }]}>
+            <TextInput
+              style={styles.input}
+              placeholder="Hora (HH:MM)"
+              placeholderTextColor="#777"
+              value={horaStr}
+              onChangeText={handleHora}
+              keyboardType="number-pad"
+              maxLength={5}
+            />
+          </View>
+        </View>
+
+      
+        {showDatePicker && (
+          <DateTimePicker
+            value={dataSelecionada}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(false);
+              if (selectedDate) {
+                setDataSelecionada(selectedDate);
+                setDataStr(formatDateToBR(selectedDate));
+              }
+            }}
+          />
+        )}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Telefone"
+            placeholderTextColor="#777"
+            value={telefone}
+            onChangeText={handleTelefone}
+            keyboardType="phone-pad"
+            maxLength={16}
+          />
+        </View>
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Endereço"
+            placeholderTextColor="#777"
+            value={endereco}
+            onChangeText={setEndereco}
+          />
+        </View>
+
+
+        <Text style={{ marginTop: 8, marginBottom: 6, color: '#333' }}>Veículo:</Text>
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity
+            style={[styles.chip, veiculo === 'carro' && styles.chipSelected]}
+            onPress={() => setVeiculo('carro')}
+          >
+            <Text style={veiculo === 'carro' ? styles.chipTextSelected : styles.chipText}>Carro</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.chip, veiculo === 'moto' && styles.chipSelected, { marginLeft: 8 }]}
+            onPress={() => setVeiculo('moto')}
+          >
+            <Text style={veiculo === 'moto' ? styles.chipTextSelected : styles.chipText}>Moto</Text>
+          </TouchableOpacity>
+        </View>
+
+        
+        <View style={{ flexDirection: 'row', marginTop: 16, gap: 10 }}>
+          <TouchableOpacity style={[styles.button, { flex: 1 }]} onPress={salvar}>
+            <Text style={styles.buttonText}>{editandoId ? 'Salvar' : 'Adicionar'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.button, { flex: 1, backgroundColor: '#666' }]} onPress={fecharModal}>
+            <Text style={styles.buttonText}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
+  </KeyboardAvoidingView>
+</Modal>
+
+    </View>
+  );
+}
+
+function isValidDateBR(s) {
+  
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return false;
+  const [d, m, y] = s.split('/').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
+function isValidTime(s) {
+  if (!/^\d{2}:\d{2}$/.test(s)) return false;
+  const [h, m] = s.split(':').map(Number);
+  return Number.isInteger(h) && Number.isInteger(m) && h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}
+
+
+function joinDateTimeToISO(dateBR, timeHM) {
+  const [d, m, y] = dateBR.split('/').map(Number);
+  const [hh, mm] = timeHM.split(':').map(Number);
+  const dt = new Date(y, m - 1, d, hh, mm, 0);
+  return dt.toISOString();
+}
+
+function pad(n) {
+  return n < 10 ? `0${n}` : `${n}`;
+}
+
+function formatDateToBR(dateObj) {
+  const d = pad(dateObj.getDate());
+  const m = pad(dateObj.getMonth() + 1);
+  const y = dateObj.getFullYear();
+  return `${d}/${m}/${y}`;
+}
+
+function formatTime(dateObj) {
+  const h = pad(dateObj.getHours());
+  const m = pad(dateObj.getMinutes());
+  return `${h}:${m}`;
+}
+
+
+function ThirdScreen({ navigation }) {
+  // chaves do armazenamento
+  const STORAGE_INBOX = 'emails_inbox';
+  const STORAGE_SENT  = 'emails_sent';
+
+  // listas
+  const [inbox, setInbox] = React.useState([]);
+  const [sent,  setSent]  = React.useState([]);
+
+  // interface de usuário
+  const [tab, setTab] = React.useState('inbox');
+  const [composeOpen, setComposeOpen] = React.useState(false);
+ 
+  const [to, setTo] = React.useState('');
+  const [subject, setSubject] = React.useState('');
+  const [body, setBody] = React.useState('');
+  const [attachments, setAttachments] = React.useState([]); 
+
+  React.useEffect(() => {
+    const load = async () => {
+      const rawInbox = await AsyncStorage.getItem(STORAGE_INBOX);
+      const rawSent  = await AsyncStorage.getItem(STORAGE_SENT);
+      setInbox(rawInbox ? JSON.parse(rawInbox) : []);
+      setSent(rawSent ? JSON.parse(rawSent) : []);
+    };
+    load();
+  }, []);
+
+  const persist = async (which, list) => {
+    if (which === 'inbox') {
+      setInbox(list);
+      await AsyncStorage.setItem(STORAGE_INBOX, JSON.stringify(list));
+    } else {
+      setSent(list);
+      await AsyncStorage.setItem(STORAGE_SENT, JSON.stringify(list));
+    }
+  };
+
+  const resetCompose = () => {
+    setTo(''); setSubject(''); setBody(''); setAttachments([]);
+  };
+
+  const openCompose = () => { resetCompose(); setComposeOpen(true); };
+  const closeCompose = () => setComposeOpen(false);
+
+  const addFile = async () => {
+    const res = await DocumentPicker.getDocumentAsync({ multiple: false, copyToCacheDirectory: true });
+    if (res.canceled) return;
+    const f = res.assets[0];
+    setAttachments(prev => [...prev, { type: 'file', uri: f.uri, name: f.name || 'arquivo' }]);
+  };
+
+  const addImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { alert('Permissão para acessar a galeria é necessária.'); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (res.canceled) return;
+    const img = res.assets[0];
+    setAttachments(prev => [...prev, { type: 'image', uri: img.uri, name: img.fileName || 'imagem' }]);
+  };
+
+  const addLink = () => {
+    const link = promptLike('Cole o link (https://...)');
+    if (!link) return;
+    setAttachments(prev => [...prev, { type: 'link', uri: link, name: link }]);
+  };
+
+  
+  const promptLike = (placeholder) => {
+    
+    if (typeof window !== 'undefined' && window?.prompt) {
+      return window.prompt(placeholder);
+    } else {
+      
+      alert('Sem prompt nativo: vamos usar um link de exemplo. Ajuste no código se quiser um modal próprio.');
+      return 'https://exemplo.com';
+    }
+  };
+
+  const removeAttachment = (idx) => {
+    setAttachments(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const sendEmail = async () => {
+    const recipients = to.split(',').map(s => s.trim()).filter(Boolean);
+    if (recipients.length === 0) { alert('Informe pelo menos um destinatário (separe por vírgulas).'); return; }
+
+    const item = {
+      id: Date.now().toString(),
+      to: recipients,
+      subject: subject.trim(),
+      body: body.trim(),
+      attachments,
+      date: new Date().toISOString(),
+    };
+
+    const updated = [item, ...sent];
+    await persist('sent', updated);
+    setComposeOpen(false);
+    resetCompose();
+    alert('E-mail “enviado” (registrado na caixa de enviados).');
+
+  };
+
+  // itens da lista da interface
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.mailItem}
+      activeOpacity={0.8}
+    >
+      <View style={styles.mailAvatar}><Text style={styles.mailAvatarTxt}>{(item?.to?.[0] || item?.from || '?').slice(0,1).toUpperCase()}</Text></View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.mailTitle}>{item.subject || '(Sem assunto)'}</Text>
+        <Text numberOfLines={1} style={styles.mailSub}>
+          {tab === 'inbox' ? (item.from || 'Remetente') : (item.to?.join(', ') || 'Destinatários')}
+        </Text>
+        {!!item.body && <Text numberOfLines={1} style={styles.mailPreview}>{item.body}</Text>}
+        {item.attachments?.length > 0 && (
+          <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+            {item.attachments.slice(0,3).map((a, i) => (
+              <View key={i} style={[styles.attachmentChip, a.type==='image' && {borderColor:'#7abfff'}]}>
+                <Ionicons name={a.type==='image' ? 'image-outline' : a.type==='link' ? 'link-outline' : 'attach-outline'} size={14} color="#555" />
+                <Text style={styles.attachmentChipTxt} numberOfLines={1}>{a.name}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+      <Text style={styles.mailDate}>{new Date(item.date).toLocaleDateString()}</Text>
+    </TouchableOpacity>
+  );
+
+  const data = tab === 'inbox' ? inbox : sent;
+
+  return (
+    <View style={styles.homeContainer}>
+      {/* TopBar */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
+          <Ionicons name="menu" size={28} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle}>Mensagens</Text>
+        <View style={{ width: 28 }} />
+      </View>
+
+      {/* Tabs */}
+      <View style={styles.tabsWrap}>
+        <TouchableOpacity style={[styles.tab, tab==='inbox' && styles.tabActive]} onPress={() => setTab('inbox')}>
+          <Text style={[styles.tabTxt, tab==='inbox' && styles.tabTxtActive]}>Recebidos</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.tab, tab==='sent' && styles.tabActive]} onPress={() => setTab('sent')}>
+          <Text style={[styles.tabTxt, tab==='sent' && styles.tabTxtActive]}>Enviados</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Lista */}
+      {data.length === 0 ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: '#555' }}>
+            Nenhuma mensagem {tab === 'inbox' ? 'recebida' : 'enviada'}.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={data}
+          keyExtractor={(it) => it.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
+          renderItem={renderItem}
+        />
+      )}
+
+      {/* FAB */}
+      <TouchableOpacity style={styles.fab} onPress={openCompose} activeOpacity={0.85}>
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
+
+      {/* COMPOSE MODAL */}
+      <Modal visible={composeOpen} animationType="fade" transparent onRequestClose={closeCompose}>
+        <KeyboardAvoidingView behavior={Platform.OS==='ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
+          <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
+            <View style={styles.modalCard}>
+              <Text style={styles.composeTitle}>Nova mensagem</Text>
+
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Para (separe por vírgulas)"
+                  placeholderTextColor="#777"
+                  value={to}
+                  onChangeText={setTo}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Assunto"
+                  placeholderTextColor="#777"
+                  value={subject}
+                  onChangeText={setSubject}
+                />
+              </View>
+
+              <View style={[styles.inputContainer, { height: 140 }]}>
+                <TextInput
+                  style={[styles.input, { height: 140, textAlignVertical: 'top' }]}
+                  placeholder="Mensagem"
+                  placeholderTextColor="#777"
+                  multiline
+                  value={body}
+                  onChangeText={setBody}
+                />
+              </View>
+
+              {/* Ações de anexo */}
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                <TouchableOpacity style={styles.clipBtn} onPress={addFile}>
+                  <Ionicons name="attach-outline" size={18} color="#333" />
+                  <Text style={styles.clipBtnTxt}>Arquivo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.clipBtn} onPress={addImage}>
+                  <Ionicons name="image-outline" size={18} color="#333" />
+                  <Text style={styles.clipBtnTxt}>Imagem</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.clipBtn} onPress={addLink}>
+                  <Ionicons name="link-outline" size={18} color="#333" />
+                  <Text style={styles.clipBtnTxt}>Link</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Lista de anexos */}
+              {attachments.length > 0 && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  {attachments.map((a, idx) => (
+                    <View key={idx} style={[styles.attachmentChip, a.type==='image' && {borderColor:'#7abfff'}]}>
+                      <Ionicons name={a.type==='image' ? 'image-outline' : a.type==='link' ? 'link-outline' : 'attach-outline'} size={14} color="#555" />
+                      <Text numberOfLines={1} style={styles.attachmentChipTxt}>{a.name}</Text>
+                      <TouchableOpacity onPress={() => removeAttachment(idx)} style={{ marginLeft: 6 }}>
+                        <Ionicons name="close-outline" size={16} color="#999" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                <TouchableOpacity style={[styles.button, { flex: 1 }]} onPress={sendEmail}>
+                  <Text style={styles.buttonText}>Enviar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.button, { flex: 1, backgroundColor: '#666' }]} onPress={closeCompose}>
+                  <Text style={styles.buttonText}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+
+
+// DRAWER PRINCIPAL
+function AppDrawer() {
+  return (
+    <Drawer.Navigator screenOptions={{ headerShown: false }} drawerContent={(props) => <CustomDrawerContent {...props} />}>
+      <Drawer.Screen name="Home" component={HomeScreen} />
+      <Drawer.Screen name="SecondScreen" component={SecondScreen} />
+      <Drawer.Screen name="ThirdScreen" component={ThirdScreen} />
+    </Drawer.Navigator>
+  );
+}
+// SPLASH
+function SplashScreen({ navigation }) {
+  useEffect(() => {
+    const checkLogin = async () => {
+      const logado = await AsyncStorage.getItem('logado');
+      setTimeout(() => {
+        if (logado === 'true') {
+          navigation.replace('AppDrawer');
+        } else {
+          navigation.replace('Login');
+        }
+      }, 2000);
+    };
+    checkLogin();
+  }, []);
+
+  return (
+    <View style={styles.splashContainer}>
+      <Image
+        source={{ uri: 'https://raw.githubusercontent.com/CauBG/APP-mobile/refs/heads/main/logo.png' }}
+        style={styles.logo}
+      />
+      <Text style={styles.nomeApp}></Text>
+    </View>
+  );
+}
+
+// LOGIN
+
+function LoginScreen({ navigation }) {
+  const { setUsuario } = useContext(UserContext);
+  const [usuario, setUsuarioLocal] = useState('');
+  const [senha, setSenha] = useState('');
+  const [mostrarSenha, setMostrarSenha] = useState(false);
+
+  const fazerLogin = async () => {
+    const contasSalvas = await AsyncStorage.getItem('contas');
+const contas = contasSalvas ? JSON.parse(contasSalvas) : [];
+
+// hash gerado
+const senhaHash = await Crypto.digestStringAsync(
+  Crypto.CryptoDigestAlgorithm.SHA256,
+  senha
+);
+
+// verifica o has do usuário
+const usuarioValido = contas.find(
+  (conta) => conta.usuario === usuario && conta.senha === senhaHash
+);
+
+if (usuarioValido) {
+  await AsyncStorage.setItem('logado', 'true');
+  await AsyncStorage.setItem('usuario', usuario);
+  await AsyncStorage.setItem('senha', senhaHash);
+  setUsuario(usuario);
+  navigation.replace('AppDrawer');
+} else {
+  alert('Usuário ou senha inválidos');
+}
+
+  };
+
+  const podeEntrar = usuario.trim() !== '' && senha.trim() !== '';
+
+  return (
+    <View style={styles.mainContainer}>
+      <Image
+        source={{ uri: 'https://raw.githubusercontent.com/CauBG/APP-mobile/refs/heads/main/logo.png' }}
+        style={styles.logo1}
+      />
+
+      <View style={styles.inputContainer}>
+        <TextInput style={styles.input} placeholder="Usuário" value={usuario} onChangeText={setUsuarioLocal} />
+      </View>
+
+      <View style={styles.inputContainer}>
+        <View style={styles.senhaContainer}>
+          <TextInput
+            style={styles.inputSenha}
+            placeholder="Senha"
+            value={senha}
+            onChangeText={setSenha}
+            secureTextEntry={!mostrarSenha}
+          />
+          <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)}>
+            <Ionicons name={mostrarSenha ? 'eye-off' : 'eye'} size={24} color="#999" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.button, { opacity: podeEntrar ? 1 : 0.5 }]}
+        onPress={fazerLogin}
+        disabled={!podeEntrar}
+      >
+        <Text style={styles.buttonText}>Entrar</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+        <Text style={styles.registerText}>Criar conta</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+
+// Cadastro
+function RegisterScreen({ navigation }) {
+  const [usuario, setUsuario] = useState('');
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [mostrarSenha, setMostrarSenha] = useState(false);
+
+  const validarEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const registrar = async () => {
+    if (!validarEmail(email)) {
+      alert('Por favor, insira um email válido!');
+      return;
+    }
+
+    const contasSalvas = await AsyncStorage.getItem('contas');
+    const contas = contasSalvas ? JSON.parse(contasSalvas) : [];
+
+    const jaExiste = contas.find((conta) => conta.usuario === usuario);
+    if (jaExiste) {
+      alert('Usuário já existe!');
+      return;
+    }
+
+    // parte de criptografia para a senha
+const senhaHash = await Crypto.digestStringAsync(
+  Crypto.CryptoDigestAlgorithm.SHA256,
+  senha
+);
+
+const novaConta = { usuario, email, senha: senhaHash };
+contas.push(novaConta);
+
+await AsyncStorage.setItem('contas', JSON.stringify(contas));
+alert('Conta criada com sucesso!');
+navigation.goBack();
+
+  };
+
+  const podeRegistrar = usuario.trim() !== '' && validarEmail(email) && senha.trim() !== '';
+
+  return (
+    <View style={styles.mainContainer}>
+      <Text style={styles.loginTitle}>Criar Conta</Text>
+      <View style={styles.inputContainer}>
+        <TextInput style={styles.input} placeholder="Usuário" value={usuario} onChangeText={setUsuario} />
+      </View>
+
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+      </View>
+
+      <View style={styles.inputContainer}>
+        <View style={styles.senhaContainer}>
+          <TextInput
+            style={styles.inputSenha}
+            placeholder="Senha"
+            value={senha}
+            onChangeText={setSenha}
+            secureTextEntry={!mostrarSenha}
+          />
+          <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)}>
+            <Ionicons name={mostrarSenha ? 'eye-off' : 'eye'} size={24} color="#999" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.button, { opacity: podeRegistrar ? 1 : 0.5 }]}
+        onPress={registrar}
+        disabled={!podeRegistrar}
+      >
+        <Text style={styles.buttonText}>Registrar</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+        <Text style={[styles.registerText, { marginTop: 10 }]}>Já tem conta? Login</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Final do código
+export default function App() {
+  const [profileImage, setProfileImage] = useState(null);
+  const [usuario, setUsuario] = useState('');
+
+  return (
+    <UserContext.Provider value={{ profileImage, setProfileImage, usuario, setUsuario }}>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Splash" component={SplashScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="AppDrawer" component={AppDrawer} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </UserContext.Provider>
+  );
+}
+// Design das telas
+const styles = StyleSheet.create({
+  splashContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#3c3c3c' },
+  logo: { width: 150, height: 150, marginBottom: 20 },
+  nomeApp: { fontSize: 28, color: '#fff', fontWeight: 'bold' },
+
+  mainContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#3c3c3c', padding: 20 },
+  logo1: { width: 150, height: 150, marginBottom: 85 },
+
+  loginTitle: { fontSize: 32, marginBottom: 40, fontWeight: 'bold', color: '#fff' },
+
+  inputContainer: {
+    width: '100%',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    borderRadius: 10,
+    backgroundColor: '#FFF',
+  },
+
+  input: { width: '100%', height: 50, paddingHorizontal: 15, borderRadius: 10, fontSize: 16 },
+
+  senhaContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, height: 50, borderRadius: 10 },
+
+  inputSenha: { flex: 1, fontSize: 16 },
+
+  button: {
+    width: '100%',
+    height: 50,
+    backgroundColor: '#8c8c8c',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.27,
+    shadowRadius: 4.65,
+    elevation: 6,
+    marginTop: 10,
+  },
+
+  buttonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  registerText: { marginTop: 15, color: '#fff', fontSize: 16, fontWeight: 'bold' },
+
+  homeContainer: { flex: 1, backgroundColor: '#EDEDED' },
+
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#333',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+  },
+
+  menuButton: { marginRight: 10 },
+
+  topBarTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+
+  drawerTopBar: {
+    height: 60,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    paddingLeft: 15,
+    marginBottom: 10,
+  },
+
+    fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#1E90FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+
+    modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)', 
+  },
+
+  modalScroll: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+  },
+
+  modalCard: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 8,
+  },
+
+  
+  inputLike: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 50,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  tabsWrap: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 8,
+  },
+  tab: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#dcdcdc',
+    borderRadius: 16,
+  },
+  tabActive: {
+    backgroundColor: '#1E90FF',
+  },
+  tabTxt: { color: '#333', fontWeight: '600' },
+  tabTxtActive: { color: '#fff' },
+
+  mailItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
+  },
+  mailAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#e6eefb',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mailAvatarTxt: { color: '#1E90FF', fontWeight: '800' },
+  mailTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
+  mailSub: { fontSize: 13, color: '#444', marginTop: 2 },
+  mailPreview: { fontSize: 13, color: '#666', marginTop: 2 },
+  mailDate: { fontSize: 11, color: '#666', marginLeft: 8 },
+
+  attachmentChip: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: '#ccc',
+    borderRadius: 14, paddingVertical: 4, paddingHorizontal: 8,
+    maxWidth: 180,
+  },
+  attachmentChipTxt: { marginLeft: 6, color: '#333', fontSize: 12 },
+
+  clipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#eee',
+  },
+  clipBtnTxt: { color: '#333', fontWeight: '600' },
+
+  fab: {
+    position: 'absolute', right: 20, bottom: 30,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: '#1E90FF',
+    alignItems: 'center', justifyContent: 'center',
+    elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+  },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  modalScroll: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 16 },
+  modalCard: {
+    width: '100%', maxWidth: 520, backgroundColor: '#E8F2FF',
+    borderRadius: 16, padding: 16,
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, elevation: 8,
+  },
+  composeTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+
+homeContent: {
+  flex: 1,
+  alignItems: 'center',
+  justifyContent: 'center',
+  position: 'relative',
+  paddingHorizontal: 20,
+},
+fadeLogo: {
+  position: 'absolute',
+  width: 400,
+  height: 400,
+  opacity: 0.90,      
+  top:80,  
+  pointerEvents: 'none',
+},
+
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#999',
+    backgroundColor: '#fff',
+  },
+  chipSelected: {
+    backgroundColor: '#1E90FF',
+    borderColor: '#1E90FF',
+  },
+  chipText: { color: '#333' },
+  chipTextSelected: { color: '#fff', fontWeight: 'bold' },
+
+
+  drawerTopBarText: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+
+  content: { flex: 1, padding: 20, justifyContent: 'center', alignItems: 'center' },
+  contentText: { color: '#333', fontSize: 16, textAlign: 'center' },
+
+  profileSection: { paddingHorizontal: 20, marginBottom: 10 },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  drawerAvatar: { width: 60, height: 60, borderRadius: 30 },
+  drawerUserName: { fontSize: 18, color: '#333', fontWeight: 'bold' },
+});
+
